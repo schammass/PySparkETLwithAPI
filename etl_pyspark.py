@@ -53,9 +53,7 @@ SQL_DRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
 SQL_PROPERTIES = {"user": DB_USER, "password": DB_PASSWORD, "driver": SQL_DRIVER}
 
 
-# ... (código anterior)
-
-# Function to retrieve existing contract IDs from the SQL table
+# Function to retrieve existing contract codes from the SQL table
 def get_existing_contract_codes():
     try:
         existing_df = spark.read.jdbc(url=SQL_URL, table=TABLE, properties=SQL_PROPERTIES)

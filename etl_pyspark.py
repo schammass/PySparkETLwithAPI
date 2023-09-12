@@ -45,12 +45,25 @@ def refresh_token():
 SERVER = config("SERVER")
 PORT = config("PORT")
 DB = config("DB")
-TABLE = "bkghp.Contracts"
+TABLE = "stg.Contracts"
 DB_USER = config("DB_USER")
 DB_PASSWORD = config("DB_PASSWORD")
 SQL_URL = f"jdbc:sqlserver://{SERVER}:{PORT};databaseName={DB};trustServerCertificate=true"
 SQL_DRIVER = "com.microsoft.sqlserver.jdbc.SQLServerDriver"
 SQL_PROPERTIES = {"user": DB_USER, "password": DB_PASSWORD, "driver": SQL_DRIVER}
+
+
+# ... (código anterior)
+
+# Function to retrieve existing contract IDs from the SQL table
+def get_existing_contract_codes():
+    try:
+        existing_df = spark.read.jdbc(url=SQL_URL, table=TABLE, properties=SQL_PROPERTIES)
+        existing_codes = [str(row['code']) for row in existing_df.select('code').collect()]
+        return set(existing_codes)
+    except Exception as e:
+        logger.error("Failed to retrieve existing contract codes: %s", e)
+        return set()
 
 # Function to retrieve all data using the refreshed token
 def retrieve_all_data():
@@ -60,6 +73,8 @@ def retrieve_all_data():
         'Api-Key': API_KEY
     }
     all_contracts = []  # List to store all contracts
+
+    existing_contract_codes = get_existing_contract_codes()  # Get existing contract codes
 
     page = 0
     while True:
@@ -72,7 +87,11 @@ def retrieve_all_data():
             if not contracts:
                 break  # No more contracts, break the loop
 
-            all_contracts.extend(contracts)
+            for contract in contracts:
+                if contract['code'] not in existing_contract_codes:
+                    all_contracts.append(contract)
+                    existing_contract_codes.add(contract['code'])
+
             page += 1
 
             logger.info("Retrieved page %d of contracts", page)
@@ -87,9 +106,9 @@ def retrieve_all_data():
         df = spark.read.json(rddjson)
         exploded_df = df.select(F.explode(df.contracts).alias('contracts')).select('contracts.*')
         exploded_df = exploded_df.withColumn('retrieved', F.lit(datetime.now()))     
-                                    
+
         # Write the dataframe into a SQL table
-        exploded_df.write.jdbc(url=SQL_URL, table=TABLE, mode='overwrite', properties=SQL_PROPERTIES)
+        exploded_df.write.jdbc(url=SQL_URL, table=TABLE, mode='append', properties=SQL_PROPERTIES)  # Use 'append' mode
         logger.info(f"All new data was written into {TABLE}")
 
 # Main loop
